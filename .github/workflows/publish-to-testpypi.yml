@@ -1,4 +1,4 @@
-name: Publish App Helper CLI 🚀 distribution 📦 to TestPyPI
+name: Publish devhand 🚀 distribution 📦 to TestPyPI
 
 on:
   push:
@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: testpypi
-      url: https://test.pypi.org/p/app-helper-cli
+      url: https://test.pypi.org/p/devhand
     permissions:
       id-token: write 
 
