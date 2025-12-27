@@ -48,7 +48,7 @@ class TestRunCommand:
         """Test running a command as a list."""
         mock_run.return_value = MagicMock(returncode=0, stdout="success", stderr="")
 
-        result = run_command(["echo", "test"])
+        run_command(["echo", "test"])
 
         mock_run.assert_called_once()
         args = mock_run.call_args
@@ -67,9 +67,7 @@ class TestRunCommand:
     @patch("dh.utils.commands.subprocess.run")
     def test_run_command_capture_output(self, mock_run):
         """Test capturing command output."""
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="test output", stderr=""
-        )
+        mock_run.return_value = MagicMock(returncode=0, stdout="test output", stderr="")
 
         result = run_command("echo test", capture_output=True)
 
@@ -144,9 +142,7 @@ class TestCheckToolVersion:
 
     @patch("dh.utils.commands.get_command_output")
     @patch("dh.utils.commands.check_command_exists")
-    def test_check_tool_version_called_process_error(
-        self, mock_check, mock_get_output
-    ):
+    def test_check_tool_version_called_process_error(self, mock_check, mock_get_output):
         """Test handling CalledProcessError returns 'installed'."""
         mock_check.return_value = True
         mock_get_output.side_effect = subprocess.CalledProcessError(1, "tool")

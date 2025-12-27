@@ -3,8 +3,6 @@
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-import typer
 
 from dh.context import ProjectContext
 
@@ -268,4 +266,3 @@ class TestProjectContext:
 
             assert context.start_path.exists()
             assert context.workspace_root.exists()
-

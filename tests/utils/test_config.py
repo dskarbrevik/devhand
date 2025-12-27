@@ -1,6 +1,5 @@
 """Tests for config utilities."""
 
-import pytest
 from pathlib import Path
 
 from dh.utils.config import Config, DatabaseConfig, load_config, save_frontend_env
