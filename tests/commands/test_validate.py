@@ -182,9 +182,7 @@ class TestValidateDeployment:
             # Mock database client
             mock_db_instance = MagicMock()
             mock_db_instance.test_connection.return_value = True
-            mock_db_instance.table.return_value.select.return_value.limit.return_value.execute.return_value = (
-                []
-            )
+            mock_db_instance.table.return_value.select.return_value.limit.return_value.execute.return_value = []
             mock_db.return_value = mock_db_instance
 
             try:
@@ -318,8 +316,8 @@ class TestValidateDeployment:
         mock_db = MagicMock()
         mock_db.test_connection.return_value = True
         # Simulate table not found
-        mock_db.table.return_value.select.return_value.limit.return_value.execute.side_effect = (
-            Exception("Table not found")
+        mock_db.table.return_value.select.return_value.limit.return_value.execute.side_effect = Exception(
+            "Table not found"
         )
 
         with (
@@ -347,9 +345,7 @@ class TestValidateDeployment:
 
         mock_db = MagicMock()
         mock_db.test_connection.return_value = True
-        mock_db.table.return_value.select.return_value.limit.return_value.execute.return_value = (
-            []
-        )
+        mock_db.table.return_value.select.return_value.limit.return_value.execute.return_value = []
 
         with (
             patch("dh.commands.validate.check_command_exists", return_value=True),
@@ -366,13 +362,13 @@ class TestValidateDeployment:
         """Test _load_env_vars helper function."""
         env_file = mock_context.frontend_path / ".env"
         env_file.write_text(
-            '# Comment line\n'
-            'KEY1=value1\n'
+            "# Comment line\n"
+            "KEY1=value1\n"
             'KEY2="value2"\n'
             "KEY3='value3'\n"
-            'KEY4=value with spaces\n'
-            '\n'
-            'INVALID_LINE_NO_EQUALS\n'
+            "KEY4=value with spaces\n"
+            "\n"
+            "INVALID_LINE_NO_EQUALS\n"
         )
 
         env_vars = validate._load_env_vars(env_file)

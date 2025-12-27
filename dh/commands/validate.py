@@ -2,7 +2,6 @@
 
 import json
 import subprocess
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -22,7 +21,7 @@ def validate(
         False,
         "--deploy",
         help="Validate deployment configuration (backend, Supabase, frontend)",
-    )
+    ),
 ):
     """Check if environment is properly configured."""
     if deploy:
@@ -187,7 +186,9 @@ def _validate_deployment():
         display_error("Local environment not configured")
         issues.append("Run 'dh setup' first to configure local environment")
         console.print()
-        console.print("[bold red]❌ Cannot validate deployment without local setup[/bold red]")
+        console.print(
+            "[bold red]❌ Cannot validate deployment without local setup[/bold red]"
+        )
         raise typer.Exit(1)
 
     display_success("Local environment configured")
@@ -226,7 +227,7 @@ def _validate_deployment():
                     else:
                         display_success(f"Backend responded: {result.stdout[:100]}")
                 except json.JSONDecodeError:
-                    display_success(f"Backend is accessible (non-JSON response)")
+                    display_success("Backend is accessible (non-JSON response)")
             else:
                 display_error("Backend API is not accessible")
                 display_error(f"curl failed with exit code {result.returncode}")
@@ -252,7 +253,10 @@ def _validate_deployment():
         display_success(f"Supabase URL configured: {supabase_url}")
 
         # Check if URL is valid format
-        if not supabase_url.startswith("https://") or not ".supabase.co" in supabase_url:
+        if (
+            not supabase_url.startswith("https://")
+            or ".supabase.co" not in supabase_url
+        ):
             display_warning("Supabase URL format looks incorrect")
             issues.append("Supabase URL format invalid")
 
@@ -276,9 +280,9 @@ def _validate_deployment():
 
                 # Check if allowed_users table exists
                 try:
-                    query_result = db_client.table("allowed_users").select("*").limit(1).execute()
+                    db_client.table("allowed_users").select("*").limit(1).execute()
                     display_success("✓ allowed_users table exists")
-                except Exception as e:
+                except Exception:
                     display_error("allowed_users table not found")
                     display_error("Run 'dh db setup' to create the table")
                     issues.append("Database not set up")
@@ -297,7 +301,9 @@ def _validate_deployment():
     # Step 3: Check Frontend Deployment (Vercel)
     console.print("[bold]Step 3: Frontend Deployment (Vercel)[/bold]")
     console.print("This checks if your frontend is configured for deployment.")
-    console.print("Note: This cannot verify if you've actually deployed to Vercel yet.\n")
+    console.print(
+        "Note: This cannot verify if you've actually deployed to Vercel yet.\n"
+    )
 
     # Check if all required env vars are set
     required_vars = [
@@ -339,11 +345,15 @@ def _validate_deployment():
     console.print()
 
     if issues:
-        console.print(f"[bold yellow]⚠️  Found {len(issues)} deployment issue(s):[/bold yellow]")
+        console.print(
+            f"[bold yellow]⚠️  Found {len(issues)} deployment issue(s):[/bold yellow]"
+        )
         for issue in issues:
             console.print(f"  - {issue}")
         console.print()
-        console.print("📖 See deployment guide: https://github.com/dskarbrevik/devhand/blob/main/DEPLOYMENT_GUIDE.md")
+        console.print(
+            "📖 See deployment guide: https://github.com/dskarbrevik/devhand/blob/main/DEPLOYMENT_GUIDE.md"
+        )
         raise typer.Exit(1)
     else:
         console.print("✨ [bold green]All deployment checks passed![/bold green]")
