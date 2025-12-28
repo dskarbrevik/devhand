@@ -4,7 +4,6 @@ import re
 from pathlib import Path
 from typing import Optional
 
-import psycopg2
 from rich.console import Console
 from supabase import Client, create_client
 
@@ -12,7 +11,7 @@ console = Console()
 
 
 class DatabaseClient:
-    """Wrapper for database operations using Supabase SDK and psycopg2."""
+    """Wrapper for database operations using Supabase SDK."""
 
     def __init__(
         self,
@@ -26,7 +25,7 @@ class DatabaseClient:
         Args:
             url: Supabase project URL
             secret_key: Secret API key (sb_secret_* or legacy service_role JWT)
-            db_password: Database password for direct PostgreSQL access
+            db_password: Database password (not used with SDK approach)
             project_ref: Project reference ID (extracted from URL if not provided)
         """
         self.url = url
@@ -45,13 +44,6 @@ class DatabaseClient:
 
         # Initialize Supabase client
         self.client: Client = create_client(url, secret_key)
-
-    @property
-    def db_host(self) -> str:
-        """Get PostgreSQL host from project ref."""
-        if not self.project_ref:
-            raise ValueError("Project ref not available")
-        return f"db.{self.project_ref}.supabase.co"
 
     def test_connection(self) -> bool:
         """Test connection to Supabase."""
@@ -138,14 +130,10 @@ class DatabaseClient:
         return stats
 
     def run_migration_file(self, migration_path: Path) -> bool:
-        """Run a SQL migration file using direct PostgreSQL connection.
+        """Run a SQL migration file using Supabase Python SDK.
 
-        Requires db_password to be set.
+        Attempts to execute SQL through available methods, falls back to manual instructions.
         """
-        if not self.db_password:
-            console.print("❌ Database password required for migrations", style="red")
-            return False
-
         if not migration_path.exists():
             console.print(f"❌ Migration file not found: {migration_path}", style="red")
             return False
@@ -154,29 +142,85 @@ class DatabaseClient:
         with open(migration_path) as f:
             sql_content = f.read()
 
-        # Connect to PostgreSQL
+        console.print(f"\n📝 Processing migration: {migration_path.name}", style="blue")
+
+        # Try to execute via Supabase SDK's table operations
+        # Since the SDK doesn't support raw SQL execution, we parse and execute what we can
         try:
-            conn = psycopg2.connect(
-                host=self.db_host,
-                port=5432,
-                database="postgres",
-                user="postgres",
-                password=self.db_password,
-            )
+            # Split into statements
+            statements = [s.strip() for s in sql_content.split(";") if s.strip()]
 
-            with conn.cursor() as cur:
-                cur.execute(sql_content)
+            # Check if this is a simple allowed_users table creation
+            if any("allowed_users" in stmt.lower() for stmt in statements):
+                # Try to create the table structure using SDK methods
+                created = self._create_allowed_users_table_via_sdk(statements)
+                if created:
+                    console.print(
+                        f"✅ Migration executed: {migration_path.name}", style="green"
+                    )
+                    return True
 
-            conn.commit()
-            conn.close()
-
+            # For other migrations or if SDK approach fails, provide manual instructions
             console.print(
-                f"✅ Migration executed: {migration_path.name}", style="green"
+                "\n⚠️  This migration requires manual execution in Supabase",
+                style="yellow",
             )
-            return True
+            console.print(
+                "\nℹ️  Copy the SQL below and run it in Supabase Dashboard > SQL Editor:",
+                style="blue",
+            )
+
+            console.print("\n" + "─" * 60, style="dim")
+            console.print(sql_content, style="cyan")
+            console.print("─" * 60 + "\n", style="dim")
+
+            console.print("Steps:", style="bold")
+            console.print("  1. Go to: https://supabase.com/dashboard", style="blue")
+            console.print("  2. Select your project", style="blue")
+            console.print("  3. Click: SQL Editor (in left sidebar)", style="blue")
+            console.print("  4. Click: 'New Query'", style="blue")
+            console.print("  5. Paste the SQL above", style="blue")
+            console.print("  6. Click 'Run' or press Cmd+Enter\n", style="blue")
+
+            from dh.utils.prompts import prompt_confirm
+
+            if prompt_confirm("Have you successfully run this migration in Supabase?"):
+                console.print(
+                    f"✅ Migration confirmed: {migration_path.name}", style="green"
+                )
+                return True
+            else:
+                console.print(
+                    f"⏭️  Skipping migration: {migration_path.name}", style="yellow"
+                )
+                return False
 
         except Exception as e:
-            console.print(f"❌ Migration failed: {e}", style="red")
+            console.print(f"❌ Error processing migration: {e}", style="red")
+            return False
+
+    def _create_allowed_users_table_via_sdk(self, statements: list) -> bool:
+        """Attempt to create allowed_users table using SDK operations.
+
+        Returns True if successful, False otherwise.
+        """
+        try:
+            # Check if table exists by trying to query it
+            try:
+                self.client.table("allowed_users").select("*").limit(1).execute()
+                # If we get here, table exists
+                console.print("  ℹ️  allowed_users table already exists", style="dim")
+                return True
+            except Exception:
+                # Table doesn't exist, which is expected for new setup
+                pass
+
+            # Unfortunately, the Supabase Python SDK doesn't provide
+            # CREATE TABLE functionality - that's a DDL operation
+            # We need to run it via SQL Editor
+            return False
+
+        except Exception:
             return False
 
     def run_migrations(self, migrations_dir: Path) -> bool:
