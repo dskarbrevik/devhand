@@ -16,26 +16,18 @@ console = Console()
 
 
 @app.command()
-def validate(
-    deploy: bool = typer.Option(
-        False,
-        "--deploy",
-        help="Validate deployment configuration (backend, Supabase, frontend)",
-    ),
-):
-    """Check if environment is properly configured."""
-    if deploy:
-        _validate_deployment()
-    else:
-        _validate_local()
-
-
-def _validate_local():
-    """Validate local development environment."""
-    console.print("\n🔍 [bold]Validating development environment...[/bold]\n")
+def validate():
+    """Check if environment is properly configured for local development and deployment."""
+    console.print("\n🔍 [bold]Validating environment...[/bold]\n")
 
     ctx = get_context()
-    issues = []
+    local_issues = []
+    deployment_issues = []
+
+    # ============================================
+    # PART 1: LOCAL DEVELOPMENT VALIDATION
+    # ============================================
+    console.print("[bold cyan]═══ Local Development Environment ═══[/bold cyan]\n")
 
     # Check frontend
     if ctx.has_frontend:
@@ -47,7 +39,7 @@ def _validate_local():
             display_success(f"Node.js: {version}")
         else:
             display_error("Node.js not installed")
-            issues.append("Node.js missing")
+            local_issues.append("Node.js missing")
 
         # Check npm
         if check_command_exists("npm"):
@@ -55,28 +47,29 @@ def _validate_local():
             display_success(f"npm: {version}")
         else:
             display_error("npm not installed")
-            issues.append("npm missing")
+            local_issues.append("npm missing")
 
         # Check .env
-        if (ctx.frontend_path / ".env").exists():
+        env_file_exists = (ctx.frontend_path / ".env").exists()
+        if env_file_exists:
             display_success(".env exists")
         else:
             display_warning(".env not found - run 'dh setup'")
-            issues.append("Frontend .env not configured")
+            local_issues.append("Frontend .env not configured")
 
         # Check node_modules
         if (ctx.frontend_path / "node_modules").exists():
             display_success("node_modules exists")
         else:
-            display_warning("node_modules not found - run 'dh install'")
-            issues.append("Frontend dependencies not installed")
+            display_warning("node_modules not found - run 'npm install'")
+            local_issues.append("Frontend dependencies not installed")
 
         # Check package.json
         if (ctx.frontend_path / "package.json").exists():
             display_success("package.json exists")
         else:
             display_error("package.json not found")
-            issues.append("package.json missing")
+            local_issues.append("package.json missing")
 
         console.print()
 
@@ -90,7 +83,7 @@ def _validate_local():
             display_success(f"Python: {version}")
         else:
             display_error("Python 3 not installed")
-            issues.append("Python 3 missing")
+            local_issues.append("Python 3 missing")
 
         # Check uv
         if check_command_exists("uv"):
@@ -98,7 +91,7 @@ def _validate_local():
             display_success(f"uv: {version}")
         else:
             display_error("uv not installed")
-            issues.append("uv missing")
+            local_issues.append("uv missing")
 
         # Check .env
         if (ctx.backend_path / ".env").exists():
@@ -110,15 +103,15 @@ def _validate_local():
         if (ctx.backend_path / ".venv").exists():
             display_success(".venv exists")
         else:
-            display_warning(".venv not found - run 'dh install'")
-            issues.append("Backend virtual environment not created")
+            display_warning(".venv not found - run 'make setup'")
+            local_issues.append("Backend virtual environment not created")
 
         # Check pyproject.toml
         if (ctx.backend_path / "pyproject.toml").exists():
             display_success("pyproject.toml exists")
         else:
             display_error("pyproject.toml not found")
-            issues.append("pyproject.toml missing")
+            local_issues.append("pyproject.toml missing")
 
         console.print()
 
@@ -133,9 +126,9 @@ def _validate_local():
     console.print()
 
     # Check database configuration
-    console.print("[bold]Database Configuration:[/bold]")
+    console.print("[bold]Database:[/bold]")
     if ctx.config.db.url:
-        display_success(f"Database URL configured: {ctx.config.db.url}")
+        display_success(f"Database URL: {ctx.config.db.url}")
 
         # Test connection
         if ctx.config.db.secret_key:
@@ -148,68 +141,71 @@ def _validate_local():
                 )
                 if db_client.test_connection():
                     display_success("Database connection successful")
+
+                    # Check if allowed_users table exists
+                    try:
+                        db_client.table("allowed_users").select("*").limit(1).execute()
+                        display_success("allowed_users table exists")
+                    except Exception:
+                        display_warning(
+                            "allowed_users table not found - run 'dh db setup'"
+                        )
+                        deployment_issues.append(
+                            "Database not set up (run 'dh db setup')"
+                        )
                 else:
                     display_error("Database connection failed")
-                    issues.append("Cannot connect to database")
+                    local_issues.append("Cannot connect to database")
             except Exception as e:
                 display_error(f"Database connection error: {e}")
-                issues.append("Database connection error")
+                local_issues.append("Database connection error")
         else:
             display_warning("Secret key not configured")
-            issues.append("Database credentials incomplete")
+            local_issues.append("Database credentials incomplete")
     else:
         display_warning("Database not configured - run 'dh setup'")
-        issues.append("Database not configured")
+        local_issues.append("Database not configured")
 
-    # Summary
     console.print()
-    if issues:
-        console.print(f"[bold yellow]⚠️  Found {len(issues)} issue(s):[/bold yellow]")
-        for issue in issues:
-            console.print(f"  - {issue}")
-        console.print("\nRun [bold]dh setup[/bold] to fix configuration issues")
-        raise typer.Exit(1)
-    else:
-        console.print("✨ [bold green]All checks passed![/bold green]")
 
-
-def _validate_deployment():
-    """Validate deployment configuration for production."""
-    console.print("\n🚀 [bold]Validating deployment configuration...[/bold]\n")
-
-    ctx = get_context()
-    issues = []
-
-    # First check if local environment is configured
-    console.print("[bold]Step 0: Local Environment[/bold]")
-    if not (ctx.frontend_path / ".env").exists():
-        display_error("Local environment not configured")
-        issues.append("Run 'dh setup' first to configure local environment")
-        console.print()
+    # Local summary
+    if local_issues:
         console.print(
-            "[bold red]❌ Cannot validate deployment without local setup[/bold red]"
+            f"[bold yellow]⚠️  Local environment has {len(local_issues)} issue(s)[/bold yellow]"
         )
-        raise typer.Exit(1)
+        console.print("[bold]Run 'dh setup' to fix configuration issues[/bold]\n")
 
-    display_success("Local environment configured")
-    console.print()
+    # ============================================
+    # PART 2: DEPLOYMENT VALIDATION
+    # ============================================
+    # Only check deployment if .env exists
+    if not env_file_exists:
+        console.print(
+            "[bold yellow]⚠️  Skipping deployment checks (no .env file)[/bold yellow]"
+        )
+        console.print("[bold]Run 'dh setup' first to configure environment[/bold]\n")
+        _print_summary(local_issues, [])
+        if local_issues:
+            raise typer.Exit(1)
+        return
+
+    console.print("[bold cyan]═══ Deployment Configuration ═══[/bold cyan]\n")
 
     # Load environment variables
     env_vars = _load_env_vars(ctx.frontend_path / ".env")
 
     # Step 1: Check Backend API (Railway)
-    console.print("[bold]Step 1: Backend API (Railway)[/bold]")
+    console.print("[bold]Backend API:[/bold]")
     backend_url = env_vars.get("NEXT_PUBLIC_API_URL")
 
     if not backend_url:
-        display_error("Backend API URL not configured in .env")
-        issues.append("Backend API URL missing")
+        display_warning("Backend API URL not configured in .env")
+        deployment_issues.append("Backend API URL missing")
     elif "localhost" in backend_url or "127.0.0.1" in backend_url:
         display_warning(f"Backend URL is localhost: {backend_url}")
-        display_warning("This looks like local development, not production")
-        issues.append("Backend not deployed - still using localhost")
+        display_warning("Not deployed yet (using local development)")
     else:
-        display_success(f"Backend URL configured: {backend_url}")
+        display_success(f"Backend URL: {backend_url}")
 
         # Try to curl the backend
         try:
@@ -223,34 +219,32 @@ def _validate_deployment():
                 try:
                     response = json.loads(result.stdout)
                     if response.get("status") == "success":
-                        display_success("✓ Backend API is accessible and responding")
+                        display_success("✓ Backend is live and responding")
                     else:
-                        display_success(f"Backend responded: {result.stdout[:100]}")
+                        display_success("✓ Backend is accessible")
                 except json.JSONDecodeError:
-                    display_success("Backend is accessible (non-JSON response)")
+                    display_success("✓ Backend is accessible")
             else:
                 display_error("Backend API is not accessible")
-                display_error(f"curl failed with exit code {result.returncode}")
-                issues.append("Backend API deployment not accessible")
+                deployment_issues.append("Backend API not accessible")
         except subprocess.TimeoutExpired:
             display_error("Backend API request timed out")
-            issues.append("Backend API timeout")
+            deployment_issues.append("Backend API timeout")
         except Exception as e:
-            display_error(f"Error checking backend: {e}")
-            issues.append("Backend check failed")
+            display_warning(f"Could not check backend: {e}")
 
     console.print()
 
-    # Step 2: Check Supabase Configuration
-    console.print("[bold]Step 2: Supabase Project[/bold]")
+    # Step 2: Check Supabase
+    console.print("[bold]Supabase:[/bold]")
     supabase_url = env_vars.get("NEXT_PUBLIC_SUPABASE_URL")
     supabase_key = env_vars.get("NEXT_PUBLIC_SUPABASE_KEY")
 
     if not supabase_url:
-        display_error("Supabase URL not configured")
-        issues.append("Supabase URL missing")
+        display_warning("Supabase URL not configured")
+        deployment_issues.append("Supabase URL missing")
     else:
-        display_success(f"Supabase URL configured: {supabase_url}")
+        display_success(f"Supabase URL: {supabase_url}")
 
         # Check if URL is valid format
         if (
@@ -258,110 +252,58 @@ def _validate_deployment():
             or ".supabase.co" not in supabase_url
         ):
             display_warning("Supabase URL format looks incorrect")
-            issues.append("Supabase URL format invalid")
+            deployment_issues.append("Supabase URL format invalid")
 
     if not supabase_key:
-        display_error("Supabase anon key not configured")
-        issues.append("Supabase anon key missing")
+        display_warning("Supabase anon key not configured")
+        deployment_issues.append("Supabase anon key missing")
     else:
         display_success("Supabase anon key configured")
 
-    # Check database connection
-    if ctx.config.db.url and ctx.config.db.secret_key:
+    console.print()
+
+    # Step 3: Check Frontend Deployment
+    console.print("[bold]Frontend Deployment:[/bold]")
+
+    # Try to find a production URL
+    frontend_url = env_vars.get("NEXT_PUBLIC_VERCEL_URL") or env_vars.get("VERCEL_URL")
+
+    if frontend_url:
+        # Ensure it starts with https://
+        if not frontend_url.startswith("http"):
+            frontend_url = f"https://{frontend_url}"
+
+        display_success(f"Frontend URL: {frontend_url}")
+
+        # Try to access the frontend
         try:
-            db_client = create_db_client(
-                ctx.config.db.url,
-                ctx.config.db.secret_key,
-                ctx.config.db.password,
-                ctx.config.db.project_ref,
+            result = subprocess.run(
+                ["curl", "-s", "-f", "-m", "10", "-I", frontend_url],
+                capture_output=True,
+                text=True,
+                timeout=15,
             )
-            if db_client.test_connection():
-                display_success("✓ Supabase database connection successful")
-
-                # Check if allowed_users table exists
-                try:
-                    db_client.table("allowed_users").select("*").limit(1).execute()
-                    display_success("✓ allowed_users table exists")
-                except Exception:
-                    display_error("allowed_users table not found")
-                    display_error("Run 'dh db setup' to create the table")
-                    issues.append("Database not set up")
+            if result.returncode == 0:
+                display_success("✓ Frontend is live on Vercel")
             else:
-                display_error("Supabase database connection failed")
-                issues.append("Cannot connect to Supabase")
+                display_warning("Frontend URL not accessible")
+                deployment_issues.append("Frontend not deployed or not accessible")
+        except subprocess.TimeoutExpired:
+            display_warning("Frontend request timed out")
         except Exception as e:
-            display_error(f"Supabase connection error: {e}")
-            issues.append("Supabase connection failed")
+            display_warning(f"Could not check frontend: {e}")
     else:
-        display_warning("Supabase credentials incomplete - cannot test database")
-        issues.append("Supabase credentials missing")
+        display_warning("Frontend URL not found in .env")
+        display_warning("Add VERCEL_URL to .env after deploying to Vercel")
+        display_warning("Or check manually at your Vercel deployment URL")
 
     console.print()
 
-    # Step 3: Check Frontend Deployment (Vercel)
-    console.print("[bold]Step 3: Frontend Deployment (Vercel)[/bold]")
-    console.print("This checks if your frontend is configured for deployment.")
-    console.print(
-        "Note: This cannot verify if you've actually deployed to Vercel yet.\n"
-    )
+    # Final summary
+    _print_summary(local_issues, deployment_issues)
 
-    # Check if all required env vars are set
-    required_vars = [
-        "NEXT_PUBLIC_SUPABASE_URL",
-        "NEXT_PUBLIC_SUPABASE_KEY",
-        "NEXT_PUBLIC_API_URL",
-    ]
-
-    missing_vars = [var for var in required_vars if not env_vars.get(var)]
-
-    if missing_vars:
-        display_error(f"Missing environment variables: {', '.join(missing_vars)}")
-        issues.append("Environment variables incomplete")
-    else:
-        display_success("All required environment variables configured")
-
-    # Check if package.json exists (for Vercel deployment)
-    if ctx.has_frontend:
-        if (ctx.frontend_path / "package.json").exists():
-            display_success("package.json exists (required for Vercel)")
-        else:
-            display_error("package.json not found")
-            issues.append("package.json missing")
-
-        if (ctx.frontend_path / "next.config.ts").exists():
-            display_success("next.config.ts exists")
-        else:
-            display_warning("next.config.ts not found")
-
-    console.print()
-
-    # Summary
-    console.print("[bold]Deployment Checklist:[/bold]")
-    console.print("✓ Step 1: Deploy Backend to Railway")
-    console.print("✓ Step 2: Create & Configure Supabase Project")
-    console.print("✓ Step 3: Setup Supabase Database (dh db setup)")
-    console.print("✓ Step 4: Configure Local Environment (dh setup)")
-    console.print("✓ Step 5: Deploy Frontend to Vercel")
-    console.print()
-
-    if issues:
-        console.print(
-            f"[bold yellow]⚠️  Found {len(issues)} deployment issue(s):[/bold yellow]"
-        )
-        for issue in issues:
-            console.print(f"  - {issue}")
-        console.print()
-        console.print(
-            "📖 See deployment guide: https://github.com/dskarbrevik/devhand/blob/main/DEPLOYMENT_GUIDE.md"
-        )
+    if local_issues or deployment_issues:
         raise typer.Exit(1)
-    else:
-        console.print("✨ [bold green]All deployment checks passed![/bold green]")
-        console.print()
-        console.print("[bold]Next steps:[/bold]")
-        console.print("1. Deploy to Vercel if you haven't already")
-        console.print("2. Add your Vercel URL to Supabase redirect URLs")
-        console.print("3. Test the full authentication flow in production")
 
 
 def _load_env_vars(env_path) -> dict:
@@ -377,3 +319,45 @@ def _load_env_vars(env_path) -> dict:
     except Exception:
         pass
     return env_vars
+
+
+def _print_summary(local_issues: list, deployment_issues: list):
+    """Print validation summary."""
+    console.print("[bold cyan]═══ Summary ═══[/bold cyan]\n")
+
+    total_issues = len(local_issues) + len(deployment_issues)
+
+    if not local_issues and not deployment_issues:
+        console.print("✨ [bold green]All checks passed![/bold green]")
+        console.print(
+            "\n[bold]Your environment is ready for development and deployment[/bold]"
+        )
+        return
+
+    if local_issues:
+        console.print(
+            f"[bold red]❌ Local Environment: {len(local_issues)} issue(s)[/bold red]"
+        )
+        for issue in local_issues:
+            console.print(f"  • {issue}")
+        console.print()
+
+    if deployment_issues:
+        console.print(
+            f"[bold yellow]⚠️  Deployment: {len(deployment_issues)} issue(s)[/bold yellow]"
+        )
+        for issue in deployment_issues:
+            console.print(f"  • {issue}")
+        console.print()
+
+    console.print(f"[bold]Total: {total_issues} issue(s) found[/bold]\n")
+
+    if local_issues:
+        console.print("[bold]Fix local issues:[/bold]")
+        console.print("  Run: [cyan]dh setup[/cyan]\n")
+
+    if deployment_issues:
+        console.print("[bold]Fix deployment issues:[/bold]")
+        console.print(
+            "  See: [cyan]https://github.com/dskarbrevik/devhand/blob/main/DEPLOYMENT_GUIDE.md[/cyan]\n"
+        )

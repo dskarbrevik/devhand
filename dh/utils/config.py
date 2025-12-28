@@ -171,6 +171,10 @@ def save_frontend_env(
                 f"NEXT_PUBLIC_SUPABASE_KEY={existing_env['NEXT_PUBLIC_SUPABASE_KEY']}\n"
             )
 
+        f.write("\n# === After Deploying to Vercel ===\n")
+        f.write("# Add your Vercel deployment URL below (for validation):\n")
+        f.write("# VERCEL_URL=https://your-app.vercel.app\n")
+
         f.write("\n# === For DevHand CLI Only ===\n")
         f.write(
             "# These are used by 'dh db' commands and are NOT needed in Vercel:\n\n"

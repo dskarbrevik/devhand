@@ -27,7 +27,7 @@ class TestValidateCommand:
             (mock_context.backend_path / ".venv").mkdir()
 
             try:
-                validate.validate(deploy=False)
+                validate.validate()
             except typer.Exit:
                 pass
 
@@ -120,10 +120,10 @@ class TestValidateCommand:
 
 
 class TestValidateDeployment:
-    """Test suite for the validate --deploy command."""
+    """Test suite for deployment validation (part of unified validate command)."""
 
     def test_validate_deploy_no_env_file(self, mock_context):
-        """Test deployment validation exits when .env is missing."""
+        """Test deployment validation skips when .env is missing."""
         # Remove .env file
         env_file = mock_context.frontend_path / ".env"
         if env_file.exists():
@@ -134,8 +134,9 @@ class TestValidateDeployment:
             patch("dh.commands.validate.check_tool_version", return_value="1.0.0"),
         ):
             try:
-                validate.validate(deploy=True)
+                validate.validate()
             except typer.Exit as e:
+                # Should exit due to local issues (missing .env)
                 assert e.exit_code == 1
 
     def test_validate_deploy_with_localhost_backend(self, mock_context):
@@ -153,7 +154,7 @@ class TestValidateDeployment:
             patch("dh.commands.validate.check_tool_version", return_value="1.0.0"),
         ):
             try:
-                validate.validate(deploy=True)
+                validate.validate()
             except typer.Exit as e:
                 # Should exit with code 1 due to localhost URL
                 assert e.exit_code == 1
@@ -186,7 +187,7 @@ class TestValidateDeployment:
             mock_db.return_value = mock_db_instance
 
             try:
-                validate.validate(deploy=True)
+                validate.validate()
             except typer.Exit:
                 pass
 
@@ -208,12 +209,16 @@ class TestValidateDeployment:
             patch("subprocess.run", return_value=mock_result),
         ):
             try:
-                validate.validate(deploy=True)
+                validate.validate()
             except typer.Exit as e:
                 assert e.exit_code == 1
 
     def test_validate_deploy_backend_timeout(self, mock_context):
         """Test deployment validation handles backend timeout."""
+        # Create node_modules and .venv so local checks pass
+        (mock_context.frontend_path / "node_modules").mkdir(exist_ok=True)
+        (mock_context.backend_path / ".venv").mkdir(exist_ok=True)
+
         env_file = mock_context.frontend_path / ".env"
         env_file.write_text(
             "NEXT_PUBLIC_API_URL=https://myapp-be.up.railway.app\n"
@@ -221,12 +226,28 @@ class TestValidateDeployment:
             "NEXT_PUBLIC_SUPABASE_KEY=test-key\n"
         )
 
+        # Mock for tool version checks - should succeed
+        def mock_run(*args, **kwargs):
+            # If it's a version check, return success
+            if "--version" in args[0]:
+                result = MagicMock()
+                result.returncode = 0
+                result.stdout = "v1.0.0"
+                return result
+            # If it's a curl command, raise timeout
+            if "curl" in args[0]:
+                raise subprocess.TimeoutExpired("curl", 10)
+            # Default success
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
         with (
             patch("dh.commands.validate.check_command_exists", return_value=True),
-            patch("subprocess.run", side_effect=subprocess.TimeoutExpired("curl", 10)),
+            patch("subprocess.run", side_effect=mock_run),
         ):
             try:
-                validate.validate(deploy=True)
+                validate.validate()
             except typer.Exit as e:
                 assert e.exit_code == 1
 
@@ -248,7 +269,7 @@ class TestValidateDeployment:
             patch("subprocess.run", return_value=mock_result),
         ):
             try:
-                validate.validate(deploy=True)
+                validate.validate()
             except typer.Exit as e:
                 # Should detect invalid Supabase URL format
                 assert e.exit_code == 1
@@ -270,7 +291,7 @@ class TestValidateDeployment:
             patch("subprocess.run", return_value=mock_result),
         ):
             try:
-                validate.validate(deploy=True)
+                validate.validate()
             except typer.Exit as e:
                 assert e.exit_code == 1
 
@@ -293,7 +314,7 @@ class TestValidateDeployment:
             patch("dh.commands.validate.create_db_client", return_value=mock_db_client),
         ):
             try:
-                validate.validate(deploy=True)
+                validate.validate()
             except typer.Exit:
                 pass
 
@@ -326,12 +347,16 @@ class TestValidateDeployment:
             patch("dh.commands.validate.create_db_client", return_value=mock_db),
         ):
             try:
-                validate.validate(deploy=True)
+                validate.validate()
             except typer.Exit as e:
                 assert e.exit_code == 1
 
     def test_validate_deploy_all_checks_pass(self, mock_context):
         """Test deployment validation passes when everything is configured correctly."""
+        # Create node_modules and .venv so local checks pass
+        (mock_context.frontend_path / "node_modules").mkdir(exist_ok=True)
+        (mock_context.backend_path / ".venv").mkdir(exist_ok=True)
+
         env_file = mock_context.frontend_path / ".env"
         env_file.write_text(
             "NEXT_PUBLIC_API_URL=https://myapp-be.up.railway.app\n"
@@ -353,7 +378,7 @@ class TestValidateDeployment:
             patch("dh.commands.validate.create_db_client", return_value=mock_db),
         ):
             try:
-                validate.validate(deploy=True)
+                validate.validate()
             except typer.Exit as e:
                 # Should not exit with error
                 assert e.exit_code != 1
