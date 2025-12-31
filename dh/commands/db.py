@@ -33,9 +33,9 @@ def get_db_client():
 
 
 @app.command()
-def setup():
-    """Initialize database tables by running migrations."""
-    console.print("🗄️  Setting up database...\n")
+def migrate():
+    """Run pending database migrations."""
+    console.print("🗄️  Running database migrations...\n")
 
     ctx = get_context()
     db_client = get_db_client()
@@ -43,8 +43,14 @@ def setup():
     # Find migrations directory
     migrations_dir = None
 
-    # Check frontend project for migrations
-    if ctx.has_frontend:
+    # Check backend project for migrations first
+    if ctx.has_backend:
+        be_migrations = ctx.backend_path / "migrations"
+        if be_migrations.exists():
+            migrations_dir = be_migrations
+
+    # Check frontend project for migrations (legacy location)
+    if not migrations_dir and ctx.has_frontend:
         fe_migrations = ctx.frontend_path / "supabase" / "migrations"
         if fe_migrations.exists():
             migrations_dir = fe_migrations
@@ -58,7 +64,7 @@ def setup():
     if not migrations_dir:
         display_error("No migrations directory found")
         display_info(
-            "Expected: [frontend]/supabase/migrations/ or [workspace]/migrations/"
+            "Expected: [backend]/migrations/ or [frontend]/supabase/migrations/ or [workspace]/migrations/"
         )
         raise typer.Exit(1)
 

@@ -64,7 +64,7 @@ def main(
       dh setup     - One-time environment setup
       dh validate  - Check environment health
       dh dev       - Start development server
-      dh db setup  - Initialize database
+      dh db migrate - Run database migrations
     """
     pass
 

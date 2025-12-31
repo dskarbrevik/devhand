@@ -9,7 +9,12 @@ from rich.console import Console
 from dh.context import get_context
 from dh.utils.commands import check_command_exists, check_tool_version
 from dh.utils.db import create_db_client
-from dh.utils.prompts import display_error, display_success, display_warning
+from dh.utils.prompts import (
+    display_error,
+    display_info,
+    display_success,
+    display_warning,
+)
 
 app = typer.Typer(help="Environment validation commands")
 console = Console()
@@ -148,11 +153,115 @@ def validate():
                         display_success("allowed_users table exists")
                     else:
                         display_warning(
-                            "allowed_users table not found - run 'dh db setup'"
+                            "allowed_users table not found - run 'dh db migrate'"
                         )
                         deployment_issues.append(
-                            "Database not set up (run 'dh db setup')"
+                            "Database not set up (run 'dh db migrate')"
                         )
+
+                    # Check authentication configuration
+                    console.print()
+                    console.print("[bold]Authentication Configuration:[/bold]")
+                    auth_config = db_client.get_auth_config()
+
+                    if auth_config:
+                        # Check email provider
+                        email_enabled = auth_config.get("external_email_enabled", False)
+                        if email_enabled:
+                            display_success("Email provider: enabled")
+                        else:
+                            display_warning("Email provider: disabled")
+                            deployment_issues.append("Email auth not enabled")
+
+                        # Check Site URL (needed for email auth)
+                        site_url = auth_config.get("site_url", "")
+                        if site_url:
+                            display_success(f"Site URL configured: {site_url}")
+                        else:
+                            display_warning("Site URL not configured")
+
+                        # Check OAuth providers
+                        providers_checked = []
+
+                        # Google
+                        google_enabled = auth_config.get(
+                            "external_google_enabled", False
+                        )
+                        if google_enabled:
+                            display_success("Google OAuth: enabled")
+                            google_client_id = auth_config.get(
+                                "external_google_client_id", ""
+                            )
+                            if google_client_id:
+                                display_info(f"  Client ID: {google_client_id[:30]}...")
+                        else:
+                            display_info("Google OAuth: not configured")
+                        providers_checked.append("google")
+
+                        # GitHub
+                        github_enabled = auth_config.get(
+                            "external_github_enabled", False
+                        )
+                        if github_enabled:
+                            display_success("GitHub OAuth: enabled")
+                        else:
+                            display_info("GitHub OAuth: not configured")
+                        providers_checked.append("github")
+
+                        # Check redirect URLs (only warn if OAuth providers are enabled)
+                        redirect_urls = auth_config.get("uri_allow_list", "")
+
+                        # Check if any OAuth providers are enabled
+                        has_oauth = any(
+                            [
+                                auth_config.get("external_google_enabled", False),
+                                auth_config.get("external_github_enabled", False),
+                                auth_config.get("external_azure_enabled", False),
+                                auth_config.get("external_apple_enabled", False),
+                            ]
+                        )
+
+                        if redirect_urls:
+                            urls_list = redirect_urls.split(",")
+                            has_localhost = any(
+                                "localhost" in url or "127.0.0.1" in url
+                                for url in urls_list
+                            )
+                            has_callback = any(
+                                "/auth/callback" in url for url in urls_list
+                            )
+
+                            if has_localhost:
+                                display_success("Local redirect URL configured")
+                            else:
+                                display_warning(
+                                    "Local redirect URL (localhost) not found"
+                                )
+
+                            if has_callback:
+                                display_success(
+                                    f"Callback URLs configured ({len(urls_list)} total)"
+                                )
+                            else:
+                                display_warning("No /auth/callback URLs found")
+                        else:
+                            if has_oauth:
+                                display_warning(
+                                    "No redirect URLs configured (needed for OAuth)"
+                                )
+                                deployment_issues.append(
+                                    "Auth redirect URLs not configured for OAuth"
+                                )
+                            else:
+                                display_info(
+                                    "No redirect URLs (not needed for email-only auth)"
+                                )
+                    else:
+                        display_warning("Could not fetch auth configuration")
+                        display_info(
+                            "Ensure access token is configured (run 'dh setup')"
+                        )
+
                 else:
                     display_error("Database connection failed")
                     local_issues.append("Cannot connect to database")

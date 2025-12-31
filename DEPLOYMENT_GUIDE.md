@@ -134,7 +134,7 @@ dh setup
 
 **Run database migrations:**
 ```bash
-dh db setup
+dh db migrate
 ```
 
 This creates the `allowed_users` table with row-level security policies.

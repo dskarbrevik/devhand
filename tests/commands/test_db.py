@@ -7,13 +7,13 @@ from unittest.mock import patch
 from dh.commands import db
 
 
-class TestDBSetupCommand:
-    """Test suite for the db setup command."""
+class TestDBMigrateCommand:
+    """Test suite for the db migrate command."""
 
-    def test_db_setup_with_frontend_migrations(
+    def test_db_migrate_with_frontend_migrations(
         self, mock_context, mock_db_client, mock_run_command
     ):
-        """Test database setup with frontend migrations."""
+        """Test database migrations with frontend migrations."""
         # Create migrations directory
         migrations_dir = mock_context.frontend_path / "supabase" / "migrations"
         migrations_dir.mkdir(parents=True)
@@ -29,9 +29,9 @@ class TestDBSetupCommand:
             mock_client.run_migrations.return_value = True
             mock_create.return_value = mock_client
 
-            # Run db setup - should attempt to apply migrations
+            # Run db migrate - should attempt to apply migrations
             try:
-                db.setup()
+                db.migrate()
             except typer.Exit:
                 # May exit after attempting migrations
                 pass
@@ -39,24 +39,24 @@ class TestDBSetupCommand:
             # Verify that database client was created
             assert mock_create.called
 
-    def test_db_setup_no_migrations(self, mock_context, mock_db_client):
-        """Test db setup when no migrations directory exists."""
-        # Run db setup without migrations should fail
+    def test_db_migrate_no_migrations(self, mock_context, mock_db_client):
+        """Test db migrate when no migrations directory exists."""
+        # Run db migrate without migrations should fail
         with pytest.raises(typer.Exit) as exc_info:
-            db.setup()
+            db.migrate()
 
         # Verify it exits with error code
         assert exc_info.value.exit_code == 1
 
-    def test_db_setup_no_config(self, mock_context, monkeypatch):
-        """Test db setup fails without database configuration."""
+    def test_db_migrate_no_config(self, mock_context, monkeypatch):
+        """Test db migrate fails without database configuration."""
         # Remove database configuration
         mock_context.config.db.url = None
         mock_context.config.db.secret_key = None
 
         # Should raise Exit
         with pytest.raises(typer.Exit) as exc_info:
-            db.setup()
+            db.migrate()
 
         assert exc_info.value.exit_code == 1
 

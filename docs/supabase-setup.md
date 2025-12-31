@@ -99,6 +99,71 @@ http://localhost:3000/auth/callback
 
 If you have multiple environments (staging, preview), add those URLs too.
 
+### Configure OAuth Providers (Optional)
+
+The template includes OAuth support. To enable providers like Google:
+
+#### Enable Google OAuth
+
+**1. Create Google OAuth Credentials**
+
+Visit [Google Cloud Console](https://console.cloud.google.com):
+
+1. Create a new project or select existing one
+2. Navigate to **APIs & Services** → **Credentials**
+3. Click **Create Credentials** → **OAuth 2.0 Client ID**
+4. Configure OAuth consent screen if prompted:
+   - User Type: External (for public apps)
+   - Add app name, user support email, developer email
+   - Add scopes: `email`, `profile`, `openid`
+5. Select **Web application** as application type
+6. Add **Authorized JavaScript origins**:
+   - `http://localhost:3000` (local development)
+   - `https://your-app.vercel.app` (production)
+7. Add **Authorized redirect URIs**:
+   - `https://<project-ref>.supabase.co/auth/v1/callback`
+   - Replace `<project-ref>` with your Supabase project reference
+8. Click **Create**
+9. Copy the **Client ID** and **Client Secret**
+
+**2. Configure Supabase**
+
+Navigate to **Authentication** → **Providers** in Supabase:
+
+1. Find **Google** in the provider list
+2. Toggle **Enable Google provider** to ON
+3. Paste your **Client ID** from Google
+4. Paste your **Client Secret** from Google
+5. The callback URL is pre-filled: `https://<project-ref>.supabase.co/auth/v1/callback`
+6. Click **Save**
+
+**3. Verify Frontend Implementation**
+
+Your template already includes Google OAuth:
+- `AuthForm.tsx` has `handleGoogleLogin()` function
+- Google sign-in button is displayed on auth page
+- Callback route handles OAuth redirects
+
+**4. Test Google Sign-In**
+
+1. Start your frontend: `npm run dev`
+2. Visit `http://localhost:3000`
+3. Click the **Google** button
+4. Complete Google OAuth flow
+5. You should be redirected to `/dashboard`
+
+**⚠️ Important:** Users who sign in via Google must still be added to `allowed_users` table. After first Google sign-in:
+1. Add their email to `supabase/allowed_users.txt`
+2. Run `dh db sync-users`
+
+#### Other OAuth Providers
+
+The same pattern applies for GitHub, Microsoft, etc.:
+1. Create OAuth app in provider's console
+2. Get Client ID and Secret
+3. Enable provider in Supabase → Authentication → Providers
+4. Update redirect URIs to use Supabase callback URL
+
 ### Optional: Customize Email Templates
 
 Navigate to **Authentication** → **Email Templates** to customize:
@@ -115,7 +180,7 @@ Use the template editor to match your branding.
 From your frontend project directory:
 
 ```bash
-dh db setup
+dh db migrate
 ```
 
 **What this does:**
@@ -369,7 +434,7 @@ CREATE POLICY "Service role can insert allowed users"
 
 ### Migration already exists
 
-**Cause:** Running `dh db setup` multiple times
+**Cause:** Running `dh db migrate` multiple times
 
 **Solution:**
 - Safe to ignore if table already exists

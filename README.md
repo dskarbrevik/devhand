@@ -46,7 +46,7 @@ From your workspace root (parent directory of frontend/backend projects):
 - `dh dev` - Start dev server (context-aware)
 - `dh build` - Build for production
 - `dh build --docker` - Build Docker image
-- `dh db setup` - Run migrations
+- `dh db migrate` - Run migrations
 - `dh db sync-users` - Sync allowed users
 - `dh clean` - Remove artifacts
 

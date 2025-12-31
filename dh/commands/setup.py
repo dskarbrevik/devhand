@@ -239,7 +239,7 @@ def setup():
     console.print("Configuration saved to .env files in each repo")
     console.print("\nNext steps:")
     console.print("  1. Run [bold]dh validate[/bold] to verify everything")
-    console.print("  2. Run [bold]dh db setup[/bold] to initialize database tables")
+    console.print("  2. Run [bold]dh db migrate[/bold] to initialize database tables")
     console.print("  3. Run [bold]dh dev[/bold] to start development server")
 
 

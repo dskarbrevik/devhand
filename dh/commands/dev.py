@@ -103,7 +103,13 @@ def test():
 
     if ctx.is_backend:
         console.print("🧪 Running tests...\n")
-        run_command("uv run pytest", cwd=ctx.backend_path)
+        result = run_command("uv run pytest", cwd=ctx.backend_path, check=False)
+        # pytest returns exit code 5 when no tests are collected
+        if result.returncode == 5:
+            console.print("⚠️  No tests found in backend", style="yellow")
+            console.print("   Create tests in tests/ directory to enable testing\n")
+        elif result.returncode != 0:
+            raise typer.Exit(result.returncode)
     elif ctx.is_frontend:
         console.print("🧪 Running tests...\n")
         run_command("npm test", cwd=ctx.frontend_path)
@@ -111,7 +117,12 @@ def test():
         # Run for all projects
         if ctx.has_backend:
             console.print("🧪 Running backend tests...\n")
-            run_command("uv run pytest", cwd=ctx.backend_path)
+            result = run_command("uv run pytest", cwd=ctx.backend_path, check=False)
+            if result.returncode == 5:
+                console.print("⚠️  No tests found in backend", style="yellow")
+                console.print("   Create tests in tests/ directory to enable testing\n")
+            elif result.returncode != 0:
+                raise typer.Exit(result.returncode)
         if ctx.has_frontend:
             console.print("🧪 Running frontend tests...\n")
             run_command("npm test", cwd=ctx.frontend_path)

@@ -297,6 +297,7 @@ class DatabaseClient:
         """Run all SQL migration files in a directory.
 
         Executes in alphabetical order (timestamped filenames ensure correct order).
+        Tracks applied migrations in schema_migrations table.
         """
         if not migrations_dir.exists():
             console.print(
@@ -313,13 +314,110 @@ class DatabaseClient:
 
         console.print(f"Found {len(sql_files)} migration(s)", style="blue")
 
+        # Get list of already applied migrations
+        applied_migrations = self._get_applied_migrations()
+
+        # Filter out already applied migrations
+        pending_migrations = [f for f in sql_files if f.stem not in applied_migrations]
+
+        if not pending_migrations:
+            console.print("✅ All migrations already applied", style="green")
+            return True
+
+        console.print(
+            f"{len(pending_migrations)} pending migration(s) to apply", style="blue"
+        )
+
         success = True
-        for sql_file in sql_files:
+        for sql_file in pending_migrations:
             if not self.run_migration_file(sql_file):
                 success = False
                 break
 
+            # Record migration as applied
+            if not self._record_migration(sql_file.stem):
+                console.print(
+                    f"⚠️  Failed to record migration: {sql_file.stem}", style="yellow"
+                )
+
         return success
+
+    def _get_applied_migrations(self) -> set:
+        """Get list of already applied migration versions."""
+        try:
+            # Check if schema_migrations table exists
+            result = self.client.table("schema_migrations").select("version").execute()
+            return {row["version"] for row in result.data}
+        except Exception:
+            # Table doesn't exist yet (first migration)
+            console.print(
+                "[dim]schema_migrations table not found (will be created)[/dim]"
+            )
+            return set()
+
+    def _record_migration(self, version: str) -> bool:
+        """Record a migration as applied."""
+        try:
+            self.client.table("schema_migrations").insert(
+                {"version": version}
+            ).execute()
+            return True
+        except Exception as e:
+            console.print(f"Error recording migration: {e}", style="yellow")
+            return False
+
+    def get_auth_config(self) -> Optional[dict]:
+        """Get authentication configuration from Supabase Management API.
+
+        Returns dict with auth provider configuration or None on error.
+        """
+        if not self.access_token:
+            console.print(
+                "⚠️  Access token not configured (needed for Management API)",
+                style="yellow",
+            )
+            return None
+
+        if not self.project_ref:
+            console.print("⚠️  Project reference not found", style="yellow")
+            return None
+
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Content-Type": "application/json",
+            }
+
+            # Call Supabase Management API
+            api_url = (
+                f"https://api.supabase.com/v1/projects/{self.project_ref}/config/auth"
+            )
+            response = requests.get(api_url, headers=headers, timeout=10)
+
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 401:
+                console.print("❌ Unauthorized - check your access token", style="red")
+                console.print(
+                    "   Get a new token: https://supabase.com/dashboard/account/tokens",
+                    style="dim",
+                )
+                return None
+            elif response.status_code == 404:
+                console.print(
+                    "❌ Project not found - check your project reference", style="red"
+                )
+                return None
+            else:
+                console.print(f"❌ API error: {response.status_code}", style="red")
+                return None
+
+        except requests.exceptions.RequestException as e:
+            console.print(f"❌ Failed to fetch auth config: {e}", style="red")
+            return None
+        except Exception as e:
+            console.print(f"❌ Unexpected error: {e}", style="red")
+            return None
 
 
 def create_db_client(
