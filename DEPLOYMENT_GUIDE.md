@@ -211,6 +211,24 @@ Now that your app is deployed, add the production URL to Supabase:
 
 ---
 
+### 8. Configure GitHub Actions Secrets (for CI/CD)
+
+If your frontend repository has GitHub Actions workflows for testing, add the Supabase credentials as repository secrets:
+
+1. Go to your **GitHub repository** → **Settings** → **Secrets and variables** → **Actions**
+2. Click **New repository secret** and add:
+   - Name: `NEXT_PUBLIC_SUPABASE_URL`  
+     Value: Your Supabase project URL (e.g., `https://xxx.supabase.co`)
+   - Name: `NEXT_PUBLIC_SUPABASE_KEY`  
+     Value: Your Supabase anon/public key
+3. Click **Add secret** for each
+
+**Why needed:** GitHub Actions workflows need these environment variables to run tests that interact with Supabase (e.g., authentication flows, API calls).
+
+**Duration:** ~2 minutes
+
+---
+
 ## Verification Checklist
 
 After completing all steps, verify:
