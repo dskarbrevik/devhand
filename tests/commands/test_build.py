@@ -54,7 +54,7 @@ class TestBuildAmbiguousContext:
             patch("dh.commands.build.run_command") as mock_run,
         ):
             build.build(docker=True)
-            
+
             # Should build both images
             assert mock_run.call_count == 2
             calls = [str(call) for call in mock_run.call_args_list]
@@ -71,7 +71,7 @@ class TestBuildAmbiguousContext:
 
         with patch("dh.commands.build.run_command") as mock_run:
             build.build(docker=False)
-            
+
             # Should build frontend (backend has no build step)
             assert mock_run.call_count == 1
             call_str = str(mock_run.call_args_list[0])

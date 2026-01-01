@@ -27,5 +27,8 @@ def requirements():
     backend_path = ctx.backend_path if ctx.has_backend else ctx.project_root
 
     console.print("📦 Generating requirements.txt...\n")
-    run_command("uv export --no-dev --no-hashes --output-file requirements.txt", cwd=backend_path)
+    run_command(
+        "uv export --no-dev --no-hashes --output-file requirements.txt",
+        cwd=backend_path,
+    )
     display_success("requirements.txt generated")
