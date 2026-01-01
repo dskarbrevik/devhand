@@ -2,6 +2,7 @@
 
 import re
 import requests
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -9,6 +10,49 @@ from rich.console import Console
 from supabase import Client, create_client
 
 console = Console()
+
+# SQL migration for the schema_migrations table (tracks applied migrations)
+SCHEMA_MIGRATIONS_SQL = """\
+-- Create the schema_migrations table to track applied migrations
+CREATE TABLE IF NOT EXISTS public.schema_migrations (
+    version TEXT PRIMARY KEY,
+    applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Grant permissions (service role only - migrations are admin operations)
+GRANT ALL ON public.schema_migrations TO service_role;
+"""
+
+# SQL migration for the allowed_users table
+ALLOWED_USERS_MIGRATION_SQL = """\
+-- Create the allowed_users table for beta access control
+-- This table is used by the frontend middleware to check if a user is allowed
+CREATE TABLE IF NOT EXISTS public.allowed_users (
+    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable Row Level Security
+ALTER TABLE public.allowed_users ENABLE ROW LEVEL SECURITY;
+
+-- Policy: Users can read their own allowed_users row
+-- This allows the frontend middleware to check if a user is allowed
+CREATE POLICY "Users can view own allowed status"
+    ON public.allowed_users
+    FOR SELECT
+    USING (auth.uid() = user_id);
+
+-- Policy: Service role can manage all rows (for admin operations)
+-- Note: Service role bypasses RLS by default, but explicit policy for clarity
+CREATE POLICY "Service role can manage allowed_users"
+    ON public.allowed_users
+    FOR ALL
+    USING (auth.jwt() ->> 'role' = 'service_role');
+
+-- Grant necessary permissions
+GRANT SELECT ON public.allowed_users TO authenticated;
+GRANT ALL ON public.allowed_users TO service_role;
+"""
 
 
 class DatabaseClient:
@@ -142,13 +186,57 @@ class DatabaseClient:
             console.print(f"Could not verify table {table_name}: {e}", style="dim")
             return False
 
-    def ensure_allowed_users_table(self) -> bool:
+    def ensure_schema_migrations_table(self) -> bool:
+        """Ensure the schema_migrations table exists for tracking migrations.
+
+        This table is required before running any migrations.
+        Returns True if table exists or was created successfully.
+        """
+        if self.table_exists("schema_migrations"):
+            return True
+
+        console.print("📝 Creating schema_migrations table...", style="blue")
+        success = self._execute_sql(SCHEMA_MIGRATIONS_SQL)
+
+        if success:
+            console.print("✅ schema_migrations table created", style="green")
+        else:
+            console.print("❌ Failed to create schema_migrations table", style="red")
+
+        return success
+
+    def ensure_database_tables(self, migrations_dir: Optional[Path] = None) -> bool:
+        """Ensure all required database tables exist.
+
+        Creates schema_migrations and allowed_users tables if they don't exist.
+        This is typically called during 'dh setup'.
+
+        Args:
+            migrations_dir: Optional path to save migration files for version control
+
+        Returns True if all tables exist or were created successfully.
+        """
+        console.print("🗄️  Checking database tables...", style="blue")
+
+        # First ensure schema_migrations exists (needed for tracking)
+        if not self.ensure_schema_migrations_table():
+            return False
+
+        # Then ensure allowed_users exists
+        if not self.ensure_allowed_users_table(migrations_dir):
+            return False
+
+        console.print("✅ All required database tables are ready", style="green")
+        return True
+
+    def ensure_allowed_users_table(self, migrations_dir: Optional[Path] = None) -> bool:
         """Ensure the allowed_users table exists with proper RLS policies.
 
-        Creates the table if it doesn't exist, with:
-        - user_id: uuid primary key referencing auth.users(id)
-        - created_at: timestamp with default
-        - RLS policies for authenticated users to read their own row
+        If migrations_dir is provided, writes the migration file there for version control.
+        The migration is tracked in schema_migrations table to prevent re-running.
+
+        Args:
+            migrations_dir: Optional path to migrations directory to save the SQL file
 
         Returns True if table exists or was created successfully.
         """
@@ -159,39 +247,20 @@ class DatabaseClient:
 
         console.print("📝 Creating allowed_users table...", style="blue")
 
-        # SQL to create the allowed_users table with RLS
-        # Using user_id as primary key since it's the natural key (no need for surrogate id)
-        create_table_sql = """
--- Create the allowed_users table
-CREATE TABLE IF NOT EXISTS public.allowed_users (
-    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+        # If migrations_dir provided, write migration file and use run_migrations
+        if migrations_dir:
+            migration_file = self._write_allowed_users_migration(migrations_dir)
+            if migration_file:
+                # Run migrations (handles schema_migrations tracking)
+                return self.run_migrations(migrations_dir)
+            else:
+                console.print(
+                    "⚠️  Could not write migration file, executing directly",
+                    style="yellow",
+                )
 
--- Enable Row Level Security
-ALTER TABLE public.allowed_users ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can read their own allowed_users row
--- This allows the frontend middleware to check if a user is allowed
-CREATE POLICY "Users can view own allowed status"
-    ON public.allowed_users
-    FOR SELECT
-    USING (auth.uid() = user_id);
-
--- Policy: Service role can manage all rows (for admin operations)
--- Note: Service role bypasses RLS by default, but explicit policy for clarity
-CREATE POLICY "Service role can manage allowed_users"
-    ON public.allowed_users
-    FOR ALL
-    USING (auth.jwt() ->> 'role' = 'service_role');
-
--- Grant necessary permissions
-GRANT SELECT ON public.allowed_users TO authenticated;
-GRANT ALL ON public.allowed_users TO service_role;
-"""
-
-        # Execute the migration
-        success = self._execute_sql(create_table_sql)
+        # Execute directly (fallback if no migrations_dir)
+        success = self._execute_sql(ALLOWED_USERS_MIGRATION_SQL)
 
         if success:
             console.print(
@@ -202,20 +271,53 @@ GRANT ALL ON public.allowed_users TO service_role;
 
         return success
 
+    def _write_allowed_users_migration(self, migrations_dir: Path) -> Optional[Path]:
+        """Write the allowed_users migration file if it doesn't exist.
+
+        Returns the path to the migration file, or None if it couldn't be written.
+        """
+        # Check if migration already exists (any file with 'allowed_users' in name)
+        existing = list(migrations_dir.glob("*_create_allowed_users.sql"))
+        if existing:
+            console.print(
+                f"✅ Migration file already exists: {existing[0].name}", style="green"
+            )
+            return existing[0]
+
+        # Create migrations directory if needed
+        migrations_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate timestamped filename
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        filename = f"{timestamp}_create_allowed_users.sql"
+        migration_path = migrations_dir / filename
+
+        try:
+            migration_path.write_text(ALLOWED_USERS_MIGRATION_SQL)
+            console.print(f"📄 Created migration: {filename}", style="blue")
+            return migration_path
+        except Exception as e:
+            console.print(f"❌ Failed to write migration file: {e}", style="red")
+            return None
+
     def sync_allowed_users(
-        self, emails: list[str], ensure_table: bool = True
+        self,
+        emails: list[str],
+        ensure_table: bool = True,
+        migrations_dir: Optional[Path] = None,
     ) -> dict[str, int]:
         """Sync a list of emails to the allowed_users table.
 
         Args:
             emails: List of email addresses to sync
             ensure_table: If True, create table if it doesn't exist
+            migrations_dir: Optional path to save migration file for version control
 
         Returns dict with counts: {'added': n, 'skipped': n, 'not_found': n}
         """
         # Ensure table exists before syncing
         if ensure_table:
-            if not self.ensure_allowed_users_table():
+            if not self.ensure_allowed_users_table(migrations_dir):
                 console.print(
                     "❌ Cannot sync users - table creation failed", style="red"
                 )

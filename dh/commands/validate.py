@@ -148,16 +148,23 @@ def validate():
                 if db_client.test_connection():
                     display_success("Database connection successful")
 
+                    # Check if schema_migrations table exists
+                    if db_client.table_exists("schema_migrations"):
+                        display_success("schema_migrations table exists")
+                    else:
+                        display_warning(
+                            "schema_migrations table not found - run 'dh setup' or 'dh db migrate'"
+                        )
+                        deployment_issues.append("schema_migrations table missing")
+
                     # Check if allowed_users table exists
                     if db_client.table_exists("allowed_users"):
                         display_success("allowed_users table exists")
                     else:
                         display_warning(
-                            "allowed_users table not found - run 'dh db migrate'"
+                            "allowed_users table not found - run 'dh setup' or 'dh db sync-users'"
                         )
-                        deployment_issues.append(
-                            "Database not set up (run 'dh db migrate')"
-                        )
+                        deployment_issues.append("allowed_users table missing")
 
                     # Check authentication configuration
                     console.print()

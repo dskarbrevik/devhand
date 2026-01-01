@@ -8,6 +8,7 @@ from rich.console import Console
 from dh.context import get_context
 from dh.utils.commands import check_command_exists, check_tool_version, run_command
 from dh.utils.config import save_frontend_env, save_backend_env
+from dh.utils.db import create_db_client
 from dh.utils.prompts import (
     display_error,
     display_info,
@@ -234,13 +235,43 @@ def setup():
         else:
             display_warning("Backend .gitignore not found")
 
+    # Step 6: Set up database tables (if configured)
+    if configure_db and ctx.config.db.secret_key:
+        display_step(6, "Setting up database tables...")
+
+        try:
+            db_client = create_db_client(
+                ctx.config.db.url,
+                ctx.config.db.secret_key,
+                ctx.config.db.password,
+                ctx.config.db.project_ref,
+                ctx.config.db.access_token,
+            )
+
+            # Determine migrations directory
+            migrations_dir = None
+            if ctx.has_backend:
+                migrations_dir = ctx.backend_path / "migrations"
+            elif ctx.has_frontend:
+                migrations_dir = ctx.frontend_path / "supabase" / "migrations"
+
+            # Ensure required tables exist
+            if db_client.ensure_database_tables(migrations_dir):
+                display_success("Database tables ready")
+            else:
+                display_warning(
+                    "Could not create database tables - run 'dh db migrate' manually"
+                )
+        except Exception as e:
+            display_warning(f"Could not set up database tables: {e}")
+            display_info("Run 'dh db migrate' manually after setup")
+
     # Final message
     console.print("\n✨ [bold green]Setup complete![/bold green]\n")
     console.print("Configuration saved to .env files in each repo")
     console.print("\nNext steps:")
     console.print("  1. Run [bold]dh validate[/bold] to verify everything")
-    console.print("  2. Run [bold]dh db migrate[/bold] to initialize database tables")
-    console.print("  3. Run [bold]dh dev[/bold] to start development server")
+    console.print("  2. Run [bold]dh dev[/bold] to start development server")
 
 
 @app.command()

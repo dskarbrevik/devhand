@@ -1,6 +1,6 @@
 [project]
 name = "devhand"
-version = "0.4.4"
+version = "0.4.5"
 description = "CLI tool to improve devX for webapps"
 readme = "README.md"
 requires-python = ">=3.11"

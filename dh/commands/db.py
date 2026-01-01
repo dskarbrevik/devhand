@@ -113,6 +113,13 @@ def sync_users(
         display_info("Specify file with --file option or create allowed_users.txt")
         raise typer.Exit(1)
 
+    # Determine migrations directory for saving the migration file
+    migrations_dir = None
+    if ctx.has_backend:
+        migrations_dir = ctx.backend_path / "migrations"
+    elif ctx.has_frontend:
+        migrations_dir = ctx.frontend_path / "supabase" / "migrations"
+
     # Read emails
     with open(users_file) as f:
         emails = [
@@ -125,8 +132,8 @@ def sync_users(
 
     display_info(f"Found {len(emails)} email(s) to sync\n")
 
-    # Sync users
-    stats = db_client.sync_allowed_users(emails)
+    # Sync users (will create migration file if table doesn't exist)
+    stats = db_client.sync_allowed_users(emails, migrations_dir=migrations_dir)
 
     # Display summary
     console.print()
