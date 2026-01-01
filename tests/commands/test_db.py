@@ -144,6 +144,7 @@ class TestDBSyncUsersFileLocation:
     ):
         """Test sync_users uses frontend supabase/allowed_users.txt by default."""
         mock_context.has_frontend = True
+        mock_context.has_backend = False
         fe_dir = tmp_path / "fe_sync"
         fe_dir.mkdir()
         mock_context.frontend_path = fe_dir
@@ -166,15 +167,19 @@ class TestDBSyncUsersFileLocation:
 
             # Should use frontend default location
             mock_db_client.sync_allowed_users.assert_called_once()
-            call_emails = mock_db_client.sync_allowed_users.call_args[0][0]
+            call_args = mock_db_client.sync_allowed_users.call_args
+            call_emails = call_args[0][0]
             assert len(call_emails) == 1
             assert "user@example.com" in call_emails
+            # Verify migrations_dir is passed (frontend supabase/migrations)
+            assert "migrations_dir" in call_args[1]
 
     def test_sync_users_default_file_workspace_root(
         self, mock_context, mock_db_client, tmp_path: Path
     ):
         """Test sync_users uses workspace root when no frontend."""
         mock_context.has_frontend = False
+        mock_context.has_backend = False
         mock_context.workspace_root = tmp_path
 
         users_file = mock_context.workspace_root / "allowed_users.txt"
@@ -193,9 +198,46 @@ class TestDBSyncUsersFileLocation:
 
             # Should use workspace root default location
             mock_db_client.sync_allowed_users.assert_called_once()
-            call_emails = mock_db_client.sync_allowed_users.call_args[0][0]
+            call_args = mock_db_client.sync_allowed_users.call_args
+            call_emails = call_args[0][0]
             assert len(call_emails) == 1
             assert "user@example.com" in call_emails
+            # migrations_dir should be None when no frontend/backend
+            assert call_args[1]["migrations_dir"] is None
+
+    def test_sync_users_with_backend_migrations_dir(
+        self, mock_context, mock_db_client, tmp_path: Path
+    ):
+        """Test sync_users passes backend migrations dir when backend exists."""
+        mock_context.has_frontend = True
+        mock_context.has_backend = True
+        fe_dir = tmp_path / "fe_sync"
+        be_dir = tmp_path / "be_sync"
+        fe_dir.mkdir()
+        be_dir.mkdir()
+        mock_context.frontend_path = fe_dir
+        mock_context.backend_path = be_dir
+
+        supabase_dir = mock_context.frontend_path / "supabase"
+        supabase_dir.mkdir()
+        users_file = supabase_dir / "allowed_users.txt"
+        users_file.write_text("user@example.com\n")
+
+        with patch("dh.commands.db.get_db_client", return_value=mock_db_client):
+            mock_db_client.sync_allowed_users.return_value = {
+                "added": 1,
+                "skipped": 0,
+                "not_found": 0,
+            }
+
+            from dh.commands.db import sync_users
+
+            sync_users(file=None)
+
+            # Should pass backend migrations directory
+            call_args = mock_db_client.sync_allowed_users.call_args
+            migrations_dir = call_args[1]["migrations_dir"]
+            assert migrations_dir == be_dir / "migrations"
 
 
 class TestDBMigrateSearchLocations:

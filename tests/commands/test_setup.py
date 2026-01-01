@@ -94,6 +94,7 @@ class TestSetupCommand:
             patch("dh.commands.setup.save_frontend_env") as mock_save_fe,
             patch("dh.commands.setup.save_backend_env") as mock_save_be,
             patch("dh.commands.setup.run_command"),
+            patch("dh.commands.setup.create_db_client") as mock_db_client,
             patch("builtins.open", mock_open(read_data=".env\n")),
         ):
             # Mock user inputs
@@ -107,6 +108,10 @@ class TestSetupCommand:
                 "https://test.vercel.app",  # vercel_url
             ]
 
+            # Mock db client for Step 6
+            mock_client = mock_db_client.return_value
+            mock_client.ensure_database_tables.return_value = True
+
             try:
                 setup.setup()
             except Exception:
@@ -115,6 +120,10 @@ class TestSetupCommand:
             # Verify env files were saved
             assert mock_save_fe.called
             assert mock_save_be.called
+
+            # Verify database tables setup was attempted
+            assert mock_db_client.called
+            assert mock_client.ensure_database_tables.called
 
     def test_setup_db_url_extraction(self, mock_context):
         """Test setup extracts project ref from Supabase URL."""
