@@ -1,7 +1,6 @@
 """Tests for setup commands."""
 
-from unittest.mock import patch, mock_open, MagicMock
-from pathlib import Path
+from unittest.mock import patch, mock_open
 
 import pytest
 import typer

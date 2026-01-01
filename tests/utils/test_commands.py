@@ -1,15 +1,12 @@
 """Tests for command execution utilities."""
 
 import subprocess
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
 
 from dh.utils.commands import (
-    check_command_exists,
     run_command,
-    get_command_output,
     check_tool_version,
 )
 
